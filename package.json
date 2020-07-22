@@ -11,11 +11,7 @@
     "email": "liuhann@gmail.com"
   },
   "license": "ISC",
-  "publishConfig": {
-    "registry": "http://10.10.247.1:4873"
-  },
   "dependencies": {
-    "wind-dao-nedb": "^1.0.0",
     "execa": "^4.0.3",
     "fs-extra": "^9.0.1",
     "pkg-dir": "^4.2.0"

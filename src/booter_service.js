@@ -11,40 +11,41 @@ module.exports = class BooterService {
         this.logger = app.logger;
         this.booter = app.booter;
         this.publicPath = path.resolve('./', app.config.public);
+        this.routePrefix = '/control'
     }
 
     initRoute(router) {
         this.bootdb = this.app.getDb('boot');
         this.pkgColl = this.bootdb.getCollection('hot-packages');
-        router.get('/os', async(ctx, next) => {
+        router.get(this.routePrefix + '/os', async(ctx, next) => {
             ctx.body = this.getOSProperties();
             await next();
         });
 
-        router.get('/server/update', async(ctx, next) => {
+        router.get(this.routePrefix + '/server/update', async(ctx, next) => {
             ctx.body = await this.runUpdate();
             await next();
         });
 
-        router.get('/server/restart', async(ctx, next) => {
+        router.get(this.routePrefix + '/server/restart', async(ctx, next) => {
             ctx.body = await this.runRestart();
             await next();
         });
 
         // 列举所有热部署的模块
-        router.get('/package/hot/list', async(ctx, next) => {
+        router.get(this.routePrefix + '/package/hot/list', async(ctx, next) => {
             ctx.body = await this.getHotModules();
             await next();
         });
 
         // 获取系统级模块列表
-        router.get('/package/system/list', async(ctx, next) => {
+        router.get(this.routePrefix + '/package/system/list', async(ctx, next) => {
             ctx.body = await this.getPackageList(ctx);
             await next();
         });
 
         // 删除热部署的模块
-        router.get('/package/undeploy', async(ctx, next) => {
+        router.get(this.routePrefix + '/package/install', async(ctx, next) => {
             const { name } = ctx.query,
                 result = await this.unDeployModule(name);
 
@@ -55,13 +56,10 @@ module.exports = class BooterService {
         });
 
         // 安装、部署远程npm服务器的模块
-        router.get('/package/deploy', async(ctx, next) => {
+        router.get(this.routePrefix + '/package/install', async(ctx, next) => {
             const { name } = ctx.query;
-
             // 依赖本地资源下载服务
-            if (!ctx.app.services.localAssets) {
-                throw new ctx.app.HttpError('500101', 'localAssets service need to be deployed');
-            }
+            
             const installResult = await ctx.app.services.localAssets.installPackage(name),
                 type = installResult.package.type,
                 startResult = await this.installHotModule(installResult.package.name, installResult.package.version, installResult.location + '/package', type);
@@ -165,7 +163,7 @@ module.exports = class BooterService {
     /**
      * 加载模块， 记录到 boot/hot-packages中
      */
-    async installHotModule(name, version, modulePath, type) {
+    async installHotModule(name, version) {
         if (this.logger && this.logger.isDebugEnabled()) {
             this.logger.debug('check boot package', name, version, modulePath);
         }
