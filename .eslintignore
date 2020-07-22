@@ -1,0 +1,3 @@
+*.json
+script
+build/*.js
