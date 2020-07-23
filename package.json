@@ -4,7 +4,7 @@
   "description": "加载器管理服务",
   "main": "src/index.js",
   "scripts": {
-    "test": "node ./test/run.js"
+    "test": "node ./test/start.js"
   },
   "author": {
     "name": "刘晗",
@@ -12,8 +12,13 @@
   },
   "license": "ISC",
   "dependencies": {
+    "axios": "^0.19.2",
     "execa": "^4.0.3",
     "fs-extra": "^9.0.1",
-    "pkg-dir": "^4.2.0"
+    "pkg-dir": "^4.2.0",
+    "wind-boot": "^1.0.2",
+    "wind-core-dao": "^1.0.4",
+    "wind-core-http": "^1.0.2",
+    "wind-core-log": "^1.0.1"
   }
 }

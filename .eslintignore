@@ -1,3 +1,4 @@
 *.json
 script
 build/*.js
+node_modules

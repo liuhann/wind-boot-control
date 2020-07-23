@@ -1,22 +1,25 @@
 const fsExtra = require('fs-extra'),
     path = require('path'),
     fs = require('fs'),
+    axios = require('axios'),
     execa = require('execa'),
     os = require('os');
 
+const OFFICIAL_NPM_SERVER = 'http://registry.npmjs.org'
 module.exports = class BooterService {
     name = '加载器服务'
     constructor(app) {
         this.app = app;
+        this.assetServer = app.config.assetServer || 'http://10.10.247.1:4873'
         this.logger = app.logger;
         this.booter = app.booter;
         this.publicPath = path.resolve('./', app.config.public);
         this.routePrefix = '/control'
     }
 
-    initRoute(router) {
-        this.bootdb = this.app.getDb('boot');
-        this.pkgColl = this.bootdb.getCollection('hot-packages');
+    async initRoute(router) {
+        this.bootdb = await this.app.getDb('boot');
+        this.pkgColl = await this.bootdb.getCollection('hot-packages');
         router.get(this.routePrefix + '/os', async(ctx, next) => {
             ctx.body = this.getOSProperties();
             await next();
@@ -45,35 +48,45 @@ module.exports = class BooterService {
         });
 
         // 删除热部署的模块
-        router.get(this.routePrefix + '/package/install', async(ctx, next) => {
-            const { name } = ctx.query,
-                result = await this.unDeployModule(name);
-
+        router.get(this.routePrefix + '/package/uninstall', async(ctx, next) => {
+            const { name } = ctx.query;
+            const result = await this.uninstallHotModule(name);
             ctx.body = {
                 result
             };
             await next();
         });
 
+        router.get(this.routePrefix + '/package/searchname', async(ctx, next) => {
+            const { name } = ctx.query;
+            const result = await this.searchPackageByName(name);
+            ctx.body = {
+                result
+            };
+            await next();
+        });
+
+        router.get(this.routePrefix + '/package/info', async(ctx, next) => {
+            const { name } = ctx.query;
+            const result = await this.getPackageInfo(name);
+            ctx.body = result;
+            await next();
+        })
+
         // 安装、部署远程npm服务器的模块
         router.get(this.routePrefix + '/package/install', async(ctx, next) => {
             const { name } = ctx.query;
             // 依赖本地资源下载服务
+            const installResult = await this.installHotModule(name)
+            ctx.body = installResult
             
-            const installResult = await ctx.app.services.localAssets.installPackage(name),
-                type = installResult.package.type,
-                startResult = await this.installHotModule(installResult.package.name, installResult.package.version, installResult.location + '/package', type);
-
-            ctx.body = {
-                installResult,
-                startResult
-            };
             await next();
         });
     }
 
     getOSProperties = () => {
         return {
+            time: new Date().getTime(),
             arch: os.arch(),
             cpus: os.cpus(),
             freemem: os.freemem(),
@@ -94,10 +107,6 @@ module.exports = class BooterService {
         return update;
     }
 
-    searchPackagesByName = async name => {
-
-    }
-
     getPackageList = async(ctx) => {
         const packages = ctx.app.packages,
             packageNames = packages.map(p => ({
@@ -111,6 +120,25 @@ module.exports = class BooterService {
 
     async getHotModules() {
         return (await this.pkgColl.find({})).list;
+    }
+    
+    /**
+     * 使用 verdaccio 服务器提供的按名称搜索npm包方法，返回包列表
+     * @param {String} name 包名称
+     */
+    searchPackageByName = async name => {
+        const response = await axios.get(this.assetServer + '/-/verdaccio/search/' + name);
+        return response.data;
+    }
+
+
+    async getPackageInfo(query) {
+        try {
+            const response = await axios.get(this.assetServer + '/' + query);
+            return response.data;
+        } catch (err) {
+            return null
+        }
     }
 
     async loadStartHotPackages() {
@@ -141,62 +169,70 @@ module.exports = class BooterService {
 
     }
 
-    async unDeployModule(name) {
-        if (this.logger && this.logger.isDebugEnabled()) {
-            this.logger.debug('undeploy module', name);
-        }
+    async uninstallHotModule(name) {
+        this.logger.trace('undeploy module', name);
         const pack = await this.pkgColl.findOne({
             name: name
         });
-
+        const moduleRequired = require(name);
         // 对于web项目 移除拷贝到public的
-        if (pack.type === 'app') {
-            await fs.promises.rmdir(path.resolve('./public', name), {
-                recursive: true
-            });
+        if (moduleRequired.type === 'app') {
+            if (moduleRequired.route) {
+                await fs.promises.rmdir(path.resolve('./public', moduleRequired.route), {
+                    recursive: true
+                });
+            }
         }
-
+        
         await this.pkgColl.remove({ name });
+        await execa('npm uninstall ' + name);
         return pack;
     }
 
     /**
      * 加载模块， 记录到 boot/hot-packages中
      */
-    async installHotModule(name, version) {
-        if (this.logger && this.logger.isDebugEnabled()) {
-            this.logger.debug('check boot package', name, version, modulePath);
-        }
+    async installHotModule(name) {
+        const result = {}
+        this.logger.debug('install package: ', name);
+
+        await execa('npm uninstall ' + name);
+        const installResult = await execa('npm i ' + name);
+
+        result.installResult = installResult
+        
+        this.logger.trace(installResult);
+        
+        let installedPackage = require(name);
+        
         let pack = await this.pkgColl.findOne({
             name: name
         });
 
         if (pack) {
-            if (pack.path !== modulePath) {
-                await this.pkgColl.patch(pack.id, {
-                    path: modulePath,
+            if (pack.version !== installedPackage.version) {
+                await this.pkgColl.patch(pack._id, {
                     version,
                     updated: new Date()
-                });
+                })
             }
         } else {
             pack = await this.pkgColl.insert({
                 name,
-                version,
-                type,
-                path: modulePath,
+                description: installedPackage.description,
+                version: installedPackage.version,
+                type: installedPackage.type,
                 created: new Date()
             });
         }
-        if (this.logger && this.logger.isDebugEnabled()) {
-            this.logger.debug('pack confirmed');
+
+        if (installedPackage.type === 'app') {
+            await this.copyWebModule(name, modulePath);
+        } else if (installedPackage.type === 'node') {
+            result.start = await this.startHotModule(name);
         }
 
-        if (type === 'app') {
-            await this.copyWebModule(name, modulePath);
-        } else if (type === 'node') {
-            await this.startHotModule(modulePath);
-        }
+        return result
     }
 
     async copyWebModule(name, modulePath) {
@@ -208,17 +244,18 @@ module.exports = class BooterService {
     /**
      * 启动模块内容
      */
-    async startHotModule(modulePath) {
+    async startHotModule(moduleName) {
         try {
-            const packageModule = require(modulePath);
-
-            if (this.logger && this.logger.isDebugEnabled()) {
-                this.logger.debug('booter.load', packageModule);
-            }
+            const packageModule = require(moduleName);
             await this.booter.loadPackage(packageModule);
-
             // 标识为热启动模块
             packageModule.hot = true;
+            await this.pkgColl.patch({
+                name: moduleName
+            }, {
+                started: new Date()
+            })
+
         } catch (err) {
             if (this.logger) {
                 this.logger.error('pack start error %O', err);
