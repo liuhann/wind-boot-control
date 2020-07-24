@@ -10,15 +10,26 @@
     "name": "刘晗",
     "email": "liuhann@gmail.com"
   },
+  "standard": {
+    "parser": "babel-eslint"
+  },
   "license": "ISC",
   "dependencies": {
     "axios": "^0.19.2",
     "execa": "^4.0.3",
     "fs-extra": "^9.0.1",
     "pkg-dir": "^4.2.0",
+    "read-last-line": "^1.1.0",
     "wind-boot": "^1.0.2",
     "wind-core-dao": "^1.0.4",
-    "wind-core-http": "^1.0.2",
-    "wind-core-log": "^1.0.1"
+    "wind-core-http": "^1.0.3",
+    "wind-core-log": "^1.0.3",
+    "wind-dao-nedb": "^1.0.2",
+    "wind-file-serve": "^1.0.2"
+  },
+  "devDependencies": {
+    "babel-eslint": "^10.1.0",
+    "standard": "^14.3.4",
+    "eslint": "^7.5.0"
   }
 }
